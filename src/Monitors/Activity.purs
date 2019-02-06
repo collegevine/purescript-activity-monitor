@@ -1,4 +1,5 @@
 module Monitors.Activity (
+    InactivityWindow(..),
     InactivityCallback(..),
     MonitoredEvent(..),
     start,
@@ -12,19 +13,19 @@ import Prelude
 import Data.DateTime (diff)
 import Data.DateTime.Instant (Instant, instant, unInstant, toDateTime)
 import Data.Foldable (traverse_)
-import Data.Maybe (Maybe(..), fromMaybe)
-import Data.Time.Duration (Seconds(..), Milliseconds(..), convertDuration)
+import Data.Maybe (Maybe(..))
+import Data.Time.Duration (Seconds, Milliseconds(..))
 import Effect (Effect)
 import Effect.Now (now)
+import Effect.Timer (setInterval)
 import Global (readInt)
 import Web.Event.Event (EventType(..))
 import Web.HTML (window)
 import Web.Event.EventTarget (EventTarget, addEventListener, eventListener)
-import Web.HTML.HTMLDocument (toDocument)
 import Web.HTML.HTMLDocument as D
 import Web.HTML.Window (document, localStorage)
 import Web.HTML.Window as W
-import Web.Storage.Storage (getItem, setItem, removeItem)
+import Web.Storage.Storage (getItem, setItem)
 
 
 -- | How long to allow an inactive session to continue.
@@ -44,7 +45,7 @@ data MonitoredEvent = ME {
 -- | A side effect performed if the activity monitor times out
 newtype InactivityCallback = OnInactivity (Effect Unit)
 
-
+-- | Starts a new timer with the default
 start ::
     InactivityCallback
     -> InactivityWindow
@@ -58,10 +59,13 @@ start' ::
     -> InactivityWindow
     -> Array MonitoredEvent
     -> Effect Unit
-start' cb window events = do
+start' (OnInactivity cb) window events = do
     bindMonitoredEvents events
-
-
+    checkpoint
+    void $ setInterval checkInterval callOnInactivity
+    where
+        callOnInactivity =
+            (\b -> when b cb) =<< hasWindowExpired window
 
 reset :: Effect Unit
 reset = checkpoint
@@ -90,7 +94,7 @@ getLatestCheckpoint currentTime = do
         Just ts ->
             pure <<< instant <<< Milliseconds $ readInt 10 ts
 
-
+-- | Checks whether or not the . If there is an error pulling
 hasWindowExpired ::
     InactivityWindow
     -> Effect Boolean -- TODO: Need more information in this result
@@ -100,7 +104,7 @@ hasWindowExpired (InactivityWindow n) = do
     case mostRecent of
         Nothing -> pure true
         Just cp -> let
-            nDT = toDateTime now
+            nDT = toDateTime currentTime
             cpDT = toDateTime cp
             inactivity = diff nDT cpDT
             in pure $ inactivity > n
@@ -125,6 +129,7 @@ bindMonitoredEvents =
 checkpointKey :: String
 checkpointKey = "last_activity_checkpoint"
 
+-- | Ten Seconds
 checkInterval :: Int
 checkInterval = 10000
 
