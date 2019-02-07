@@ -88,9 +88,10 @@ checkpoint ::
     String
     -> Effect Unit
 checkpoint key = do
-    currentTime <- show <<< unInstant <$> now
+    (Milliseconds currentTime) <- unInstant <$> now
+    let ts = show currentTime
     ls <- localStorage =<< window
-    setItem key currentTime ls
+    setItem key ts ls
 
 
 getLatestCheckpoint ::
