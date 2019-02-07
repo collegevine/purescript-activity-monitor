@@ -3,8 +3,9 @@ module Monitors.Activity (
     InactivityCallback(..),
     MonitoredEvent(..),
     start,
+    start',
     reset,
-    checkpointKey
+    reset'
 ) where
 
 
@@ -20,19 +21,19 @@ import Effect.Now (now)
 import Effect.Timer (setInterval)
 import Global (readInt)
 import Web.Event.Event (EventType(..))
-import Web.HTML (window)
 import Web.Event.EventTarget (EventTarget, addEventListener, eventListener)
+import Web.HTML (window)
 import Web.HTML.HTMLDocument as D
 import Web.HTML.Window (document, localStorage)
 import Web.HTML.Window as W
 import Web.Storage.Storage (getItem, setItem)
 
 
--- | How long to allow an inactive session to continue.
+-- | A session becomes inactive once the inactivity window has elapsed.
 newtype InactivityWindow = InactivityWindow Seconds
 
 -- | The events which constitute "activity". There is a default set consisting of:
--- window.load, document.click, document.mouseMove, document.keypress
+-- | window.load, document.click, document.mouseMove, document.keypress
 data MonitoredEvent = ME {
     name:: EventType,
     context :: EventTarget
@@ -42,44 +43,54 @@ data MonitoredEvent = ME {
 -- API
 --
 
--- | A side effect performed if the activity monitor times out
+-- | A side effect performed if/when the activity monitor times out.
 newtype InactivityCallback = OnInactivity (Effect Unit)
 
--- | Starts a new timer with the default
+-- | Starts a new timer with the default 'MonitoredEvent's. See above for the specifc events.
 start ::
     InactivityCallback
     -> InactivityWindow
     -> Effect Unit
 start cb window = do
     me <- monitoredEvents
-    start' cb window me
+    start' checkpointKey cb window me
 
+-- | A fully-configurable version of 'start'. If you wanted to trigger an inactivity
+-- | callback based on the last time someone liked something on Facebook, you can do that.
 start' ::
-    InactivityCallback
+    String
+    -> InactivityCallback
     -> InactivityWindow
     -> Array MonitoredEvent
     -> Effect Unit
-start' (OnInactivity cb) window events = do
-    bindMonitoredEvents events
-    checkpoint
+start' key (OnInactivity cb) window events = do
+    bindMonitoredEvents key events
+    checkpoint key
     void $ setInterval checkInterval callOnInactivity
     where
         callOnInactivity =
             (\b -> when b cb) =<< hasWindowExpired window
 
+-- | Manually reset the logout timer.
 reset :: Effect Unit
-reset = checkpoint
+reset = reset' checkpointKey
+
+reset' ::
+    String
+    -> Effect Unit
+reset' = checkpoint
 
 --
 -- Helpers
 --
 
 checkpoint ::
-    Effect Unit
-checkpoint = do
+    String
+    -> Effect Unit
+checkpoint key = do
     currentTime <- show <<< unInstant <$> now
     ls <- localStorage =<< window
-    setItem checkpointKey currentTime ls
+    setItem key currentTime ls
 
 
 getLatestCheckpoint ::
@@ -111,13 +122,14 @@ hasWindowExpired (InactivityWindow n) = do
 
 
 bindMonitoredEvents ::
-    Array MonitoredEvent
+    String
+    -> Array MonitoredEvent
     -> Effect Unit
-bindMonitoredEvents =
+bindMonitoredEvents key =
     traverse_ attatchEvent
     where
     attatchEvent (ME {name, context}) = do
-        listener <- eventListener (const checkpoint)
+        listener <- eventListener (const $ checkpoint key)
         addEventListener name listener false context
 
 
