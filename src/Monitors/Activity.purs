@@ -152,8 +152,9 @@ monitoredEvents = do
     doc <- D.toEventTarget <$> document w
     let win = W.toEventTarget w
     pure [
-         ME {name: EventType "click", context: doc}
+         ME {name: EventType "mousedown", context: doc}
         ,ME {name: EventType "mousemove", context: doc}
         ,ME {name: EventType "keypress", context: doc}
+        ,ME {name: EventType "scroll", context: doc}
         ,ME {name: EventType "load", context: win}
         ]
